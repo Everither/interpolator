@@ -14,7 +14,7 @@ struct Data {
 impl Model for Data {}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (300, 250))
+    ViziaState::new(|| (300, 210))
 }
 
 pub(crate) fn create(
@@ -51,9 +51,12 @@ pub(crate) fn create(
 
             Label::new(cx, "Tolerance");
 
-            ParamSlider::new(cx, Data::params, |params| &params.tolerance).width(Pixels(172.0));
-            
+            ParamSlider::new(cx, Data::params, |params| &params.tolerance).width(Pixels(184.0));
 
+            Label::new(cx, "Version: 0.1.0")
+            .font_size(11.0)
+            .child_top(Pixels(20.0));
+        
         })
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))
