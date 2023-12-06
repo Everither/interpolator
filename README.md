@@ -22,5 +22,5 @@ The plugin also optionally restricts the maximum tolerable error between the ori
 `Tolerance` The maximum allowed error before recomputation. With low values, the tonality of high frequencies is preserved, as `Amount` essentially dynamically adjusts to minimize error.
 
 ## Installation
-Download dust_saturator_v0.1.1.vst3.zip from [Releases](https://github.com/Everither/dust-saturation/releases/tag/v0.1.1), unzip and place in your VST3 folder. 
+
 
