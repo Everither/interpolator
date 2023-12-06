@@ -1,6 +1,6 @@
 # Linear Interpolator
 
-Downsamples the input, then linearly interpolates between these samples. Sounds like a bit crusher, but less harsh. 
+Downsamples the input, then linearly interpolates between these samples. Sounds like a bit crusher, but less harsh. Has the ability to preserve tonality of high frequencies even when downsampled heavily.
 
 Built with the [NIH-plug](https://github.com/robbert-vdh/nih-plug) framework and the [VIZIA](https://github.com/vizia/vizia) UI library.
 
@@ -8,25 +8,18 @@ Built with the [NIH-plug](https://github.com/robbert-vdh/nih-plug) framework and
 
 ## How It Works
 
-The amplitude of each individual sample point determines how far it gets forward time shifted.
+The input undergoes a downsampling process. A pair of samples is selected periodically, the distance between these two samples is determined by the `Amount` parameter. Then, all samples between these two selected samples will be assigned values such that they create a linear line from start to end. 
 
-For example, an array of 10 sample points gets processed by the algorithm, with indexes 0 to 9.
-Each sample has an amplitude between -1 and 1.
-
-To process the first sample (the sample at index 0) the absolute value of its amplitude (basically dropping the negative sign if there is one) is multiplied by some constant (determined by the parameter `Amount`) then rounded down to an integer.
-
-Suppose the first sample (the sample at index 0) has amplitude 0.3, and `Amount` is set to 10, then the calculated value is 0.3*10=3.
-Take 3 steps from this sample, arriving at the fourth sample (sample at index 3). The first sample is then assigned the amplitude of the fourth sample.
+The plugin also optionally restricts the maximum tolerable error between the original input and the interpolated (or in other words, approximated) output. Whenever a linear line drifts too far away from the original input, or more precisely, whenever the error exceeds a certain amount, then the line will be redrawn with a smaller `Amount` such that the error does not exceed the constraint. The maximum tolerable error is determined by the `Tolerance` knob. 
 
 ## Parameters
-`Amount` The maximum time shifting distance, measured in samples.
+`Amount` The amount of downsampling, measured in samples.
 
-`Curve` The curve/tension in the time shifting calculation.
+`Dither` Similar to dithering in image processing, in this context, creating the illusion of decimal values using a combination of different integer values.
+- When disabled, `Amount` will snap to the nearest integer and automation will sound discrete. 
+- When enabled, `Amount` will stay as a decimal and automation will sound smooth and continuous.
 
-- At 1.0, it behaves as a linear line, meaning more dynamics, shortened duration of distortion
-- At 0.5, it behaves as a square root curve, meaning less dynamics, longer distortion
-
-`Invert` Inverts the algorithm. When enabled, peaks are preserved more, leading to a warmer sound. 
+`Tolerance` The maximum allowed error before recomputation. With low values, the tonality of high frequencies is preserved, as `Amount` essentially dynamically adjusts to minimize error.
 
 ## Installation
 Download dust_saturator_v0.1.1.vst3.zip from [Releases](https://github.com/Everither/dust-saturation/releases/tag/v0.1.1), unzip and place in your VST3 folder. 
