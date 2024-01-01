@@ -1,7 +1,7 @@
 use nih_plug::prelude::*;
 
-use linear_interpolator::LinearInterpolator;
+use interpolator::Interpolator;
 
 fn main() {
-    nih_export_standalone::<LinearInterpolator>();
+    nih_export_standalone::<Interpolator>();
 }

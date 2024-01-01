@@ -7,25 +7,37 @@ mod editor;
 // The maximum deviation from the actual sample position
 pub const MAX_AMOUNT: f32 = 100.0;
 // The minimum deviation from the actual sample position
-pub const MIN_AMOUNT: f32 = 0.0;
+pub const MIN_AMOUNT: f32 = 1.0;
 // Minimum value for tolerance
 pub const MIN_TOLERANCE: f32 = 0.0;
 // Maximum value for tolerance
 pub const MAX_TOLERANCE: f32 = 1.0;
+// Minimum value for cubic correction
+pub const MIN_CORRECTION: f32 = 0.0;
+// Maximum value for cubic correction
+pub const MAX_CORRECTION: f32 = 1.0;
 // Scuffed way of marking a sample
 pub const MARKER: f32 = 100.0;
 
-pub struct LinearInterpolator {
-    params: Arc<LinearInterpolatorParams>,
+pub struct Interpolator {
+    params: Arc<InterpolatorParams>,
     aux_buffer: Vec<Vec<f32>>,
-    gradient: Vec<f32>,
+    m_1: Vec<f32>,
+    m_2: Vec<f32>,
     c: Vec<f32>,
-    carry_over: f32
+    carry_over: f32,
+    a_1: Vec<f32>,
+    b_1: Vec<f32>,
+    c_1: Vec<f32>,
+    tang_1: Vec<f32>,
+    tang_2: Vec<f32>,
+    x: Vec<f32>
+    
 
 }
 
 #[derive(Params)]
-struct LinearInterpolatorParams {
+struct InterpolatorParams {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 
@@ -35,30 +47,41 @@ struct LinearInterpolatorParams {
     #[id = "tolerance"]
     pub tolerance: FloatParam,
 
-    #[id = "dither"]
-    pub dither: BoolParam
+    #[id = "smooth"]
+    pub smooth: BoolParam,
+
+    #[id = "cubic_correction"]
+    pub cubic_correction: FloatParam
 }
 
-impl Default for LinearInterpolator {
+impl Default for Interpolator {
     fn default() -> Self {
         Self {
-            params: Arc::new(LinearInterpolatorParams::default()),
+            params: Arc::new(InterpolatorParams::default()),
             aux_buffer: vec![],
-            gradient: vec![],
+            m_1: vec![],
+            m_2: vec![],
             c: vec![],
-            carry_over: 0.0
+            carry_over: 0.0,
+            a_1: vec![],
+            b_1: vec![],
+            c_1: vec![],
+            tang_1: vec![],
+            tang_2: vec![],
+            x: vec![]
+    
         }
     }
 }
 
-impl Default for LinearInterpolatorParams {
+impl Default for InterpolatorParams {
     fn default() -> Self {
         Self {
             editor_state: editor::default_state(),
 
             amount: FloatParam::new(
                 "Amount",
-                0.0,
+                1.0,
                 FloatRange::Linear {
                     min: MIN_AMOUNT, 
                     max: MAX_AMOUNT 
@@ -74,16 +97,25 @@ impl Default for LinearInterpolatorParams {
                 }
             ),
 
-            dither: BoolParam::new(
-                "Dither",
+            smooth: BoolParam::new(
+                "Smooth",
                 false
+            ),
+
+            cubic_correction: FloatParam::new(
+                "Cubic Correction",
+                0.0,
+                FloatRange::Linear { 
+                    min: MIN_CORRECTION, 
+                    max: MAX_CORRECTION 
+                }
             )
         }
     }
 }
 
-impl Plugin for LinearInterpolator {
-    const NAME: &'static str = "Linear Interpolator";
+impl Plugin for Interpolator {
+    const NAME: &'static str = "Interpolator";
     const VENDOR: &'static str = "Evr!";
     const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
     const EMAIL: &'static str = "everither.every@gmail.com";
@@ -127,10 +159,9 @@ impl Plugin for LinearInterpolator {
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         _buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        context: &mut impl InitContext<Self>,
     ) -> bool {
-        // Set the latency (this is assuming buffer size is fixed)
-        // context.set_latency_samples(buffer_config.max_buffer_size);
+        context.set_latency_samples(2 * MAX_AMOUNT as u32);
 
         true
     }
@@ -148,6 +179,7 @@ impl Plugin for LinearInterpolator {
         let buffer_slice = buffer.as_slice();
         let amount_float: f32 = self.params.amount.smoothed.next();
         let tolerance: f32 = self.params.tolerance.smoothed.next();
+        let mut cubic_correction: f32 = self.params.cubic_correction.smoothed.next();
 
         // Scuffed enumeration
         let mut channel_number = 0;
@@ -158,11 +190,18 @@ impl Plugin for LinearInterpolator {
             if self.aux_buffer.len() <= channel_number {
                 self.aux_buffer.push(vec![]);
                 self.c.push(0.0);
-                self.gradient.push(1.0);
+                self.m_1.push(1.0);
+                self.m_2.push(1.0);
+                self.a_1.push(0.0);
+                self.b_1.push(0.0);
+                self.c_1.push(0.0);
+                self.tang_1.push(0.0);
+                self.tang_2.push(0.0);
+                self.x.push(0.0);
             }
 
             for i in 0..channel_samples.len() {
-                if self.aux_buffer[channel_number].len() <= MAX_AMOUNT as usize {
+                if self.aux_buffer[channel_number].len() <= (2.0 * MAX_AMOUNT) as usize {
                     // Upon first launching the plugin, the aux buffer is not (fully) populated yet
                     self.aux_buffer[channel_number].push(channel_samples[i])
                 } else {
@@ -171,7 +210,7 @@ impl Plugin for LinearInterpolator {
                         
                         // Get amount + handle dithering
                         let mut amount = amount_float as usize;
-                        if self.params.dither.value() {
+                        if self.params.smooth.value() {
                             self.carry_over += amount_float % 1.0;
                             if self.carry_over > 1.0 {
                                 self.carry_over -= 1.0;
@@ -181,7 +220,7 @@ impl Plugin for LinearInterpolator {
 
                         // Calculate initial position (c) and gradient
                         let c = self.aux_buffer[channel_number][0];
-                        let gradient = (self.aux_buffer[channel_number][amount] - self.c[channel_number]) / (amount as f32);    
+                        let gradient = (self.aux_buffer[channel_number][amount] - c) / (amount as f32);    
                         
                         let mut end_point = amount;
 
@@ -198,14 +237,61 @@ impl Plugin for LinearInterpolator {
 
                         // Calculate initial position (c) and gradient (2nd iteration)
                         self.c[channel_number] = self.aux_buffer[channel_number][0];
-                        self.gradient[channel_number] = (self.aux_buffer[channel_number][end_point] - self.c[channel_number]) / (end_point as f32);                      
+                        self.m_1[channel_number] = (self.aux_buffer[channel_number][end_point] - self.c[channel_number]) / (end_point as f32);                      
 
                         // Set everything between initial and end point to MARKER
                         for i in 1..end_point {
                             self.aux_buffer[channel_number][i] = MARKER;
                         }
+
+                        // Calculate initial position (c) and gradient 2ND SECTION
+                        let c2 = self.aux_buffer[channel_number][amount];
+                        let gradient2 = (self.aux_buffer[channel_number][2 * amount] - c2) / (amount as f32);    
+                        
+                        let mut end_point2 = 2 * amount;
+
+                        // Line function2
+                        for i in amount+1..2*amount {
+                            let approximation = gradient2 * (i as f32) + c2;
+                            let actual = self.aux_buffer[channel_number][i];
+                            // Compute error
+                            if (approximation - actual).abs() > tolerance {
+                                end_point2 = i;
+                                break;
+                            }
+                        }
+
+                        // Calculate gradient2
+                        let m_2 = (self.aux_buffer[channel_number][end_point2] - self.aux_buffer[channel_number][end_point]) / ((end_point2 - end_point) as f32);  
+
+                        // for testing
+                        self.m_2[channel_number] = m_2;
+
+                        // Calculate tang2
+                        self.tang_2[channel_number] = (self.m_1[channel_number] + m_2) / 2.0;
+                        // Reset x
+                        self.x[channel_number] = 0.0;
+
+                        // Finding the cubic equation
+
+                        // Find coefficient c
+                        self.c_1[channel_number] = self.tang_1[channel_number] - self.m_1[channel_number];
+
+                        // Find coefficient a
+                        self.a_1[channel_number] = (self.tang_2[channel_number] - self.m_1[channel_number] + self.c_1[channel_number]) / ((amount as f32).powf(2.0));
+
+                        // Find coefficient b
+                        self.b_1[channel_number] = (-1.0 * self.a_1[channel_number] * (amount as f32).powf(2.0) - self.c_1[channel_number]) / (amount as f32);
+                        
+
+                        // Update tang1 = tang2
+                        self.tang_1[channel_number] = self.tang_2[channel_number];
+
+
+
                     } else {
-                        self.c[channel_number] += self.gradient[channel_number];
+                        self.c[channel_number] += self.m_1[channel_number];
+                        self.x[channel_number] += 1.0;
                     }
 
                     // Append new sample + Serve oldest sample
@@ -213,7 +299,11 @@ impl Plugin for LinearInterpolator {
                     self.aux_buffer[channel_number].remove(0);
 
                     // Apply to current buffer
-                    channel_samples[i] = self.c[channel_number];
+                    channel_samples[i] = self.c[channel_number] + cubic_correction * (
+                        self.a_1[channel_number] * self.x[channel_number].powf(3.0) 
+                        + self.b_1[channel_number] * self.x[channel_number].powf(2.0)
+                        + self.c_1[channel_number] * self.x[channel_number]
+                    );
 
                 }
             }
@@ -226,8 +316,8 @@ impl Plugin for LinearInterpolator {
     }
 }
 
-impl ClapPlugin for LinearInterpolator {
-    const CLAP_ID: &'static str = "com.your-domain.Linear-Interpolator";
+impl ClapPlugin for Interpolator {
+    const CLAP_ID: &'static str = "com.your-domain.Interpolator";
     const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
@@ -235,12 +325,12 @@ impl ClapPlugin for LinearInterpolator {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
-impl Vst3Plugin for LinearInterpolator {
-    const VST3_CLASS_ID: [u8; 16] = *b"LineArinTerpOlat";
+impl Vst3Plugin for Interpolator {
+    const VST3_CLASS_ID: [u8; 16] = *b"InteRpolAtorRrrr";
 
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
 }
 
-nih_export_clap!(LinearInterpolator);
-nih_export_vst3!(LinearInterpolator);
+nih_export_clap!(Interpolator);
+nih_export_vst3!(Interpolator);
