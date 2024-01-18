@@ -248,10 +248,10 @@ impl Plugin for Interpolator {
                         let c2 = self.aux_buffer[channel_number][amount];
                         let gradient2 = (self.aux_buffer[channel_number][2 * amount] - c2) / (amount as f32);    
                         
-                        let mut end_point2 = 2 * amount;
+                        let mut end_point2 = end_point + amount;
 
                         // Line function2
-                        for i in amount+1..2*amount {
+                        for i in end_point+1..end_point + amount {
                             let approximation = gradient2 * (i as f32) + c2;
                             let actual = self.aux_buffer[channel_number][i];
                             // Compute error
@@ -264,9 +264,6 @@ impl Plugin for Interpolator {
                         // Calculate gradient2
                         let m_2 = (self.aux_buffer[channel_number][end_point2] - self.aux_buffer[channel_number][end_point]) / ((end_point2 - end_point) as f32);  
 
-                        // for testing
-                        self.m_2[channel_number] = m_2;
-
                         // Calculate tang2
                         self.tang_2[channel_number] = (self.m_1[channel_number] + m_2) / 2.0;
                         // Reset x
@@ -278,10 +275,10 @@ impl Plugin for Interpolator {
                         self.c_1[channel_number] = self.tang_1[channel_number] - self.m_1[channel_number];
 
                         // Find coefficient a
-                        self.a_1[channel_number] = (self.tang_2[channel_number] - self.m_1[channel_number] + self.c_1[channel_number]) / ((amount as f32).powf(2.0));
+                        self.a_1[channel_number] = (self.tang_2[channel_number] - self.m_1[channel_number] + self.c_1[channel_number]) / ((end_point as f32).powf(2.0));
 
                         // Find coefficient b
-                        self.b_1[channel_number] = (-1.0 * self.a_1[channel_number] * (amount as f32).powf(2.0) - self.c_1[channel_number]) / (amount as f32);
+                        self.b_1[channel_number] = (-1.0 * self.a_1[channel_number] * (end_point as f32).powf(2.0) - self.c_1[channel_number]) / (end_point as f32);
                         
 
                         // Update tang1 = tang2
