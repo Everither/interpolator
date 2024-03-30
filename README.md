@@ -25,4 +25,4 @@ The plugin also optionally restricts the maximum tolerable error between the ori
 
 ## Installation
 
-Download linear_interpolator_v0.1.1.vst3.zip from [Releases](https://github.com/Everither/linear-interpolator/releases/tag/0.1.0), unzip and place in your VST3 folder. 
+Download interpolator_v0.1.0.vst3.zip from [Releases](https://github.com/Everither/interpolator/releases/tag/0.1.0), unzip and place in your VST3 folder. 
